@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>태양 고도 측정기 바르게 쓰기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FFFFFF; --ink:#1C2A43; --muted:#5A6A84; --line:#D6DFEB; --grid:rgba(47,95,168,.075);
+  --blue:#2F5FA8; --blue-ink:#FFFFFF; --blue-soft:#E8EFFA;
+  --red:#D3313B; --orange:#D9811A; --sun:#F2C230;
+  --good:#1D7F52; --good-soft:#E2F3EA; --warn:#B4441B; --warn-soft:#FBEDE5;
+  --chip:rgba(255,255,255,.88); --chip-ink:#1C2A43;
+  --font-ui:'IBM Plex Sans KR','Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',system-ui,sans-serif;
+  --font-head:'Gowun Dodum','IBM Plex Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  color-scheme: light;
+}
+*,*::before,*::after{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{ margin:0; background:#BFDDF0; color:var(--ink); font-family:var(--font-ui); font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+button,input,select{ font:inherit; color:inherit; }
+button{ cursor:pointer; }
+:focus-visible{ outline:3px solid var(--sun); outline-offset:2px; }
+
+#stage{ position:relative; overflow:hidden; height:100vh; height:100dvh; background:linear-gradient(180deg,#78B2E0 0%,#BFDDF0 55%,#E4F0F6 100%); }
+#c{ display:block; width:100%; height:100%; touch-action:none; }
+
+/* 상단 */
+.top{ position:absolute; left:14px; right:14px; top:12px; display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:10px; pointer-events:none; z-index:3; }
+.right{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; max-width:100%; }
+.title{ pointer-events:auto; background:var(--chip); color:var(--chip-ink); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); padding:9px 14px 10px; border-radius:14px; max-width:440px; }
+.title h1{ margin:0; font-family:var(--font-head); font-weight:400; font-size:1.3rem; line-height:1.25; }
+.title p{ margin:2px 0 0; font-size:.8rem; color:var(--muted); }
+.times{ pointer-events:auto; display:flex; gap:4px; padding:5px; border-radius:14px; background:var(--chip); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); overflow-x:auto; max-width:100%; }
+.times button{ position:relative; border:0; background:transparent; font-weight:600; font-size:.86rem; padding:7px 9px 9px; border-radius:10px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.times button:hover:not(:disabled){ background:rgba(127,160,210,.18); }
+.times button[aria-pressed="true"]{ background:var(--sun); color:#1C2A43; }
+.times button:disabled{ opacity:.4; cursor:not-allowed; }
+.times button.rec::after{ content:""; position:absolute; left:50%; bottom:3px; width:5px; height:5px; margin-left:-2.5px; border-radius:50%; background:var(--red); }
+.times button[aria-pressed="true"].rec::after{ background:#1C2A43; }
+.tools{ display:flex; gap:8px; pointer-events:auto; flex-wrap:wrap; justify-content:flex-end; }
+.tool{ border:0; background:var(--chip); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); padding:9px 14px; border-radius:12px; font-weight:600; font-size:.9rem; box-shadow:0 2px 8px rgba(20,40,70,.12); }
+.tool:hover{ filter:brightness(1.04); }
+
+/* 장소 표시 */
+.pin{ position:absolute; left:0; top:0; transform:translate(-50%,-100%); border:0; padding:0; background:none; display:none; z-index:2; }
+.pin span{ display:grid; place-items:center; width:42px; height:42px; border-radius:50%; background:#fff; color:#1C2A43; font-weight:700; font-size:1.1rem; box-shadow:0 3px 10px rgba(20,40,70,.28); border:3px solid #1C2A43; }
+.pin::after{ content:""; display:block; width:0; height:0; margin:-2px auto 0; border:8px solid transparent; border-top-color:#1C2A43; border-bottom:0; }
+.pin:hover span{ background:var(--sun); }
+.pin.wrong span{ border-color:var(--warn); color:var(--warn); }
+
+/* 활동 카드 */
+.card{ position:absolute; z-index:4; left:50%; bottom:14px; transform:translateX(-50%); width:min(960px,calc(100% - 28px)); max-height:48%; overflow:auto;
+  border-radius:20px; box-shadow:0 14px 40px rgba(15,30,60,.26); border:1px solid rgba(255,255,255,.6);
+  padding:14px 18px 16px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.05fr); gap:10px 22px; align-items:start;
+  background-color:rgba(255,255,255,.95);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:16px 16px; }
+.c-text,.c-ctrl{ display:flex; flex-direction:column; gap:10px; min-width:0; }
+.back{ display:flex; align-items:center; justify-content:center; gap:10px; width:100%; border:0; border-radius:14px; padding:15px 18px; font-size:1.1rem; font-weight:700; background:var(--warn); color:#fff; box-shadow:0 6px 18px rgba(180,68,27,.35); }
+.back:hover{ filter:brightness(1.08); }
+.steps{ list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(4,1fr); gap:4px; max-width:360px; }
+.steps li{ display:flex; flex-direction:column; align-items:center; gap:4px; font-size:.78rem; color:var(--muted); position:relative; }
+.steps li::before{ content:""; position:absolute; top:15px; left:-50%; right:50%; height:2px; background:var(--line); z-index:0; }
+.steps li:first-child::before{ display:none; }
+.steps b{ position:relative; z-index:1; display:grid; place-items:center; width:30px; height:30px; border-radius:50%; background:var(--paper); border:2px solid var(--line); font-size:.9rem; color:var(--muted); }
+.steps li.done b{ background:var(--blue); border-color:var(--blue); color:var(--blue-ink); }
+.steps li.done::before,.steps li.now::before{ background:var(--blue); }
+.steps li.now b{ border-color:var(--blue); color:var(--blue); background:var(--blue-soft); }
+.steps li.now{ color:var(--ink); font-weight:600; }
+.card h2{ margin:2px 0 0; font-family:var(--font-head); font-weight:400; font-size:1.45rem; line-height:1.25; }
+.card .lead{ margin:0; font-size:1rem; }
+.card .how{ margin:0; font-size:.86rem; color:var(--muted); }
+.ctrl{ display:flex; flex-direction:column; gap:8px; }
+.ctrl label{ font-size:.86rem; font-weight:600; }
+.row{ display:flex; align-items:center; gap:8px; }
+.row input[type=range]{ flex:1; accent-color:var(--blue); height:28px; }
+.nudge{ width:40px; height:36px; border-radius:10px; border:1px solid var(--line); background:var(--paper); font-weight:700; }
+.nudge:hover{ background:var(--blue-soft); }
+.places{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.places button{ border:1px solid var(--line); background:var(--paper); border-radius:12px; padding:10px 6px; font-weight:700; font-size:1.05rem; }
+.places button:hover{ background:var(--blue-soft); }
+.places button.wrong{ border-color:var(--warn); color:var(--warn); background:var(--warn-soft); }
+.places button.right{ border-color:var(--good); color:var(--good); background:var(--good-soft); }
+.reads{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.field{ display:flex; flex-direction:column; gap:4px; }
+.field span{ font-size:.84rem; font-weight:600; }
+.field div{ display:flex; align-items:baseline; gap:6px; }
+.field input{ width:100%; min-width:0; padding:9px 10px; border-radius:10px; border:1.5px solid var(--line); background:var(--paper); font-size:1.15rem; font-weight:600; font-variant-numeric:tabular-nums; }
+.field input:focus{ border-color:var(--blue); outline:none; box-shadow:0 0 0 3px var(--blue-soft); }
+.field em{ font-style:normal; color:var(--muted); font-weight:600; }
+.field.bad input{ border-color:var(--warn); }
+.field.ok input{ border-color:var(--good); }
+.actions{ display:flex; gap:8px; flex-wrap:wrap; }
+.btn{ border:0; border-radius:12px; padding:12px 18px; font-weight:700; font-size:1rem; background:var(--blue); color:var(--blue-ink); }
+.btn:hover{ filter:brightness(1.07); }
+.btn:disabled{ opacity:.45; cursor:not-allowed; filter:none; }
+.btn.ghost{ background:transparent; color:var(--ink); border:1.5px solid var(--line); }
+.fb{ margin:0; padding:10px 12px; border-radius:12px; font-size:.93rem; display:none; }
+.fb.show{ display:block; }
+.fb.good{ background:var(--good-soft); color:var(--good); }
+.fb.bad{ background:var(--warn-soft); color:var(--warn); }
+.fb.info{ background:var(--blue-soft); color:var(--blue); }
+.temp{ display:flex; align-items:center; gap:12px; padding:8px 12px; border:1.5px dashed var(--line); border-radius:12px; font-size:.9rem; }
+.temp svg{ flex:none; }
+.note{ margin:0; font-size:.76rem; color:var(--muted); }
+
+/* 기록표 시트 */
+.sheet{ position:absolute; z-index:5; left:14px; bottom:calc(var(--cardH,220px) + 24px); width:min(560px,calc(100% - 28px)); max-height:calc(100% - var(--cardH,220px) - 120px); overflow:auto; border-radius:16px; box-shadow:0 12px 36px rgba(15,30,60,.28); display:none; padding:14px 16px 16px;
+  background-color:var(--paper); background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px); background-size:16px 16px; }
+.sheet.open{ display:block; }
+.sheet-head{ display:flex; align-items:center; gap:6px; margin-bottom:10px; }
+.tabs{ display:flex; gap:4px; background:var(--blue-soft); padding:4px; border-radius:11px; }
+.tabs button{ border:0; background:transparent; padding:6px 12px; border-radius:8px; font-weight:600; font-size:.9rem; }
+.tabs button[aria-selected="true"]{ background:var(--paper); box-shadow:0 1px 3px rgba(0,0,0,.12); }
+.x{ margin-left:auto; border:0; background:transparent; width:34px; height:34px; border-radius:9px; font-size:1.2rem; }
+.x:hover{ background:var(--blue-soft); }
+table{ width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; font-size:.92rem; }
+th,td{ padding:7px 6px; text-align:center; border-bottom:1px solid var(--line); }
+th{ font-size:.8rem; color:var(--muted); font-weight:600; }
+td:first-child{ font-weight:600; }
+tr.cur td{ background:rgba(242,194,48,.18); }
+td.empty{ color:var(--muted); opacity:.6; }
+.meta{ font-size:.8rem; color:var(--muted); margin:8px 0 0; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+.meta .lk{ border:0; background:none; color:var(--muted); text-decoration:underline; font-size:.8rem; padding:0; }
+.meta .pr{ border:0; background:var(--blue); color:#fff; font-weight:700; font-size:.82rem; padding:6px 12px; border-radius:9px; }
+.legend{ display:flex; gap:14px; flex-wrap:wrap; font-size:.84rem; margin:2px 0 6px; }
+.legend i{ display:inline-block; width:18px; height:3px; border-radius:2px; vertical-align:middle; margin-right:5px; }
+#graph{ width:100%; height:auto; display:block; }
+
+/* 설정 */
+.modal{ position:absolute; inset:0; z-index:10; display:none; place-items:center; background:rgba(15,30,60,.35); padding:16px; }
+.modal.open{ display:grid; }
+.panel{ width:min(520px,100%); max-height:100%; overflow:auto; background:var(--paper); border-radius:18px; padding:18px 20px 20px; box-shadow:0 20px 50px rgba(15,30,60,.35); }
+.panel h2{ margin:0 0 4px; font-family:var(--font-head); font-weight:400; font-size:1.4rem; }
+.panel .sub{ margin:0 0 14px; font-size:.84rem; color:var(--muted); }
+.form{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.form label{ display:flex; flex-direction:column; gap:4px; font-size:.84rem; font-weight:600; }
+.form label.full{ grid-column:1 / -1; }
+.form input,.form select{ padding:9px 10px; border-radius:10px; border:1.5px solid var(--line); background:var(--paper); font-weight:500; font-size:.95rem; min-width:0; }
+.form .chk{ flex-direction:row; align-items:center; gap:8px; font-weight:500; }
+.form .chk input{ width:18px; height:18px; }
+.form .hint{ grid-column:1 / -1; margin:-4px 0 0; font-size:.78rem; color:var(--muted); font-weight:400; }
+.panel .actions{ margin-top:16px; justify-content:space-between; }
+
+#printArea{ display:none; }
+
+@media (max-width: 760px){
+  .card{ grid-template-columns:1fr; width:calc(100% - 16px); bottom:8px; max-height:52%; padding:12px 14px 14px; gap:8px; border-radius:16px; }
+  .card h2{ font-size:1.2rem; }
+  .card .how,.note{ display:none; }
+  .title{ padding:7px 11px 8px; }
+  .title h1{ font-size:1.05rem; }
+  .title p{ display:none; }
+  .top{ left:8px; right:8px; top:8px; gap:6px; }
+  .right{ width:100%; gap:6px; }
+  .tool{ padding:7px 11px; font-size:.84rem; }
+  .sheet{ left:8px; width:calc(100% - 16px); bottom:calc(var(--cardH,220px) + 14px); }
+  .form{ grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion: reduce){ *{ transition:none !important; animation:none !important; } }
+
+@media print{
+  @page{ size:A4; margin:14mm; }
+  html,body{ height:auto; background:#fff; }
+  #stage{ display:none !important; }
+  #printArea{ display:block; color:#000; font-family:var(--font-ui); }
+  #printArea h1{ font-family:var(--font-head); font-weight:400; font-size:22pt; margin:0 0 4pt; }
+  #printArea .info{ font-size:10.5pt; margin:0 0 12pt; color:#333; }
+  #printArea .name{ display:flex; gap:24pt; font-size:11pt; margin:0 0 12pt; }
+  #printArea .name span{ border-bottom:1px solid #000; min-width:120pt; display:inline-block; }
+  #printArea table{ font-size:11pt; margin-bottom:14pt; }
+  #printArea th,#printArea td{ border:1px solid #888; padding:6pt; }
+  #printArea th{ color:#000; background:#f1f4f9; }
+  #printArea h3{ font-size:12pt; margin:14pt 0 6pt; }
+  #printArea svg{ width:100%; max-width:170mm; height:auto; }
+  #printArea .lines div{ border-bottom:1px solid #999; height:26pt; }
+}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="c" aria-label="태양 고도 측정기 3D 조작 화면"></canvas>
+  <div class="top">
+    <div class="title">
+      <h1>태양 고도 측정기 바르게 쓰기</h1>
+      <p id="subtitle"></p>
+    </div>
+    <div class="right">
+      <div class="times" id="times" role="group" aria-label="측정 시각"></div>
+      <div class="tools">
+        <button class="tool" id="recBtn" aria-expanded="false" aria-controls="sheet">기록표</button>
+        <button class="tool" id="viewBtn">시점 되돌리기</button>
+        <button class="tool" id="setBtn" aria-controls="settings">설정</button>
+      </div>
+    </div>
+  </div>
+  <div id="pins"></div>
+
+  <section class="sheet" id="sheet" aria-label="측정 기록">
+    <div class="sheet-head">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tabT" aria-selected="true">기록표</button>
+        <button role="tab" id="tabG" aria-selected="false">그래프</button>
+      </div>
+      <button class="x" id="closeSheet" aria-label="닫기">✕</button>
+    </div>
+    <div id="paneT">
+      <table>
+        <thead><tr><th>측정 시각</th><th>태양 고도(°)</th><th>그림자 길이(cm)</th><th>기온(°C)</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <p class="meta"><span>막대기 길이 10 cm · 기온은 그늘진 곳 1.5 m 높이</span><span><button class="lk" id="resetBtn">기록 지우기</button> <button class="pr" id="printBtn1">인쇄 · PDF 저장</button></span></p>
+    </div>
+    <div id="paneG" hidden>
+      <div class="legend"><span><i style="background:var(--red)"></i>태양 고도</span><span><i style="background:var(--blue)"></i>그림자 길이</span><span><i style="background:var(--orange)"></i>기온</span></div>
+      <svg id="graph" viewBox="0 0 420 240" role="img" aria-label="시각에 따른 태양 고도, 그림자 길이, 기온 꺾은선그래프"></svg>
+      <p class="meta"><span>세 그래프는 눈금이 서로 달라요. 값이 가장 큰 시각이 언제인지 모양을 비교해 보세요.</span><button class="pr" id="printBtn2">인쇄 · PDF 저장</button></p>
+    </div>
+  </section>
+
+  <aside class="card" id="card" aria-live="polite"></aside>
+
+  <div class="modal" id="settings" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <div class="panel">
+      <h2 id="setTitle">우리 학교 설정</h2>
+      <p class="sub">학교 위치와 날짜에 맞춰 태양의 움직임이 계산돼요. 설정은 이 컴퓨터에 저장돼요.</p>
+      <div class="form">
+        <label>학교 이름<input id="fSchool" maxlength="30"></label>
+        <label>학년 · 과목<input id="fKlass" maxlength="30"></label>
+        <label>지역<select id="fRegion"></select></label>
+        <label>측정 날짜<input id="fDate" type="date"></label>
+        <label>위도(°N)<input id="fLat" type="number" step="0.01" min="30" max="45"></label>
+        <label>경도(°E)<input id="fLon" type="number" step="0.01" min="120" max="135"></label>
+        <p class="hint">지역을 고르면 위도·경도가 채워져요. 학교 좌표를 알면 직접 적어도 돼요.</p>
+        <label>하루 최저 기온(°C)<input id="fTmin" type="number" step="0.5"></label>
+        <label>하루 최고 기온(°C)<input id="fTmax" type="number" step="0.5"></label>
+        <p class="hint">날짜를 바꾸면 그 달의 평균적인 값이 들어가요. 오늘 일기 예보 값으로 바꿔도 좋아요.</p>
+        <label class="chk full"><input id="fTeacher" type="checkbox">정답 도움말 보이기 (교사용)</label>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" id="restartBtn">처음부터 다시</button>
+        <span style="display:flex;gap:8px">
+          <button class="btn ghost" id="cancelSet">닫기</button>
+          <button class="btn" id="saveSet">저장</button>
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="printArea"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+'use strict';
+const $ = s => document.querySelector(s);
+const D2R = Math.PI/180, R2D = 180/Math.PI;
+const reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- 기본 자료 ---------- */
+const REGIONS = [
+  ['서울',37.57,126.98],['인천',37.46,126.71],['수원',37.26,127.03],['춘천',37.88,127.73],['강릉',37.75,128.88],
+  ['청주',36.64,127.49],['세종',36.48,127.29],['대전',36.35,127.38],['안동',36.57,128.73],['포항',36.02,129.34],
+  ['대구',35.87,128.60],['전주',35.82,127.15],['울산',35.54,129.31],['창원',35.23,128.68],['부산',35.18,129.08],
+  ['광주',35.16,126.85],['목포',34.81,126.39],['제주',33.50,126.53],['직접 입력',null,null]
+];
+const TIMES = [9.5,10.5,11.5,12.5,13.5,14.5,15.5];
+const tLabel = h => Math.floor(h)+':'+(h%1 ? '30' : '00');
+/* 달별 대략적인 하루 최저·최고 기온 (우리나라 내륙 평균에 가까운 값) */
+const MONTH_T = [[-4,5],[-2,8],[3,14],[9,20],[14,25],[19,28],[23,30],[23,31],[18,27],[11,22],[4,14],[-2,7]];
+const H = 10;          // 막대기 길이 cm
+const YB = 1.2;        // 받침판 윗면 높이
+const YR = 1.5;        // 자 윗면 높이
+const RULER = 40;      // 자 눈금 끝 (cm)
+
+const store = {
+  get(k,d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+function todayStr(){ const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function monthOf(ds){ return Math.min(11, Math.max(0, (+ds.slice(5,7)||1)-1)); }
+function defaults(){
+  const date = todayStr(), m = monthOf(date);
+  return { school:'강북초등학교', klass:'6학년 과학', region:'대구', lat:35.87, lon:128.60, date, tmin:MONTH_T[m][0], tmax:MONTH_T[m][1], teacher:false };
+}
+let S = Object.assign(defaults(), store.get('sunalt.settings', {}));
+
+/* ---------- 태양 위치 (NOAA 근사식, 한국 표준시) ---------- */
+function dayOfYear(ds){ const p = ds.split('-').map(Number); return Math.round((Date.UTC(p[0],p[1]-1,p[2]) - Date.UTC(p[0],0,1))/864e5)+1; }
+function sunPos(hour){
+  const n = dayOfYear(S.date), g = 2*Math.PI/365*(n-1+(hour-12)/24);
+  const eq = 229.18*(0.000075+0.001868*Math.cos(g)-0.032077*Math.sin(g)-0.014615*Math.cos(2*g)-0.040849*Math.sin(2*g));
+  const dec = 0.006918-0.399912*Math.cos(g)+0.070257*Math.sin(g)-0.006758*Math.cos(2*g)+0.000907*Math.sin(2*g)-0.002697*Math.cos(3*g)+0.00148*Math.sin(3*g);
+  const tst = hour*60 + eq + 4*S.lon - 60*9;
+  const ha = (tst/4-180)*D2R, lat = S.lat*D2R;
+  const alt = Math.asin(Math.sin(lat)*Math.sin(dec)+Math.cos(lat)*Math.cos(dec)*Math.cos(ha));
+  const az = Math.atan2(Math.sin(ha), Math.cos(ha)*Math.sin(lat)-Math.tan(dec)*Math.cos(lat)) + Math.PI;
+  return { alt:alt*R2D, az:az*R2D };
+}
+function shadowLen(i){ const a = sunPos(TIMES[i]).alt; return a > 0 ? H/Math.tan(a*D2R) : Infinity; }
+function available(i){ return shadowLen(i) <= RULER - 1; }
+function hashStr(s){ let h = 2166136261; for(let k=0;k<s.length;k++){ h ^= s.charCodeAt(k); h = Math.imul(h,16777619); } return h>>>0; }
+function tempAt(i){
+  const h = TIMES[i];
+  const f = h <= 14.5 ? Math.pow(Math.sin(Math.max(0,(h-6)/8.5)*Math.PI/2),2) : 1-0.04*(h-14.5);
+  const r = ((hashStr(S.date+"|"+S.lat+"|"+i)%1000)/1000-0.5)*0.2;
+  return Math.round((S.tmin+(S.tmax-S.tmin)*f+r)*10)/10;
+}
+
+/* ---------- 상태 ---------- */
+const st = { step:1, pick:null, placed:false, ti:0, yaw:0, d:3, tries:0, ok2:false, ok3:false, ok4:false, view:'over' };
+function recKey(){ return S.date+'|'+S.lat+'|'+S.lon; }
+let records = {};
+function loadRecords(){ records = (store.get('sunalt.records',{})[recKey()]) || {}; }
+function saveRecords(){ const all = store.get('sunalt.records',{}); all[recKey()] = records; store.set('sunalt.records', all); }
+loadRecords();
+
+/* ---------- 3D 장면 ---------- */
+const canvas = $('#c'), stage = $('#stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true, logarithmicDepthBuffer:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 60000);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.maxPolarAngle = 86*D2R; controls.minDistance = 8; controls.maxDistance = 16000;
+const V = (x,y,z) => new THREE.Vector3(x,y,z);
+
+scene.add(new THREE.HemisphereLight(0xe4f1ff, 0xc9a978, 0.62));
+const sunLight = new THREE.DirectionalLight(0xfff2da, 0.9);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(4096,4096);
+const sc = sunLight.shadow.camera; sc.left=-4200; sc.right=4200; sc.top=4200; sc.bottom=-4200; sc.near=100; sc.far=16000;
+sunLight.shadow.bias = -0.0004; sunLight.shadow.normalBias = 3;
+scene.add(sunLight); scene.add(sunLight.target);
+const sdir = V(0,1,0);
+
+function canvasTex(w,h,draw){ const c = document.createElement('canvas'); c.width=w; c.height=h; draw(c.getContext('2d'),w,h); const t = new THREE.CanvasTexture(c); t.anisotropy = renderer.capabilities.getMaxAnisotropy(); return t; }
+
+/* 운동장 */
+const sandTex = canvasTex(256,256,(g,w,h)=>{
+  g.fillStyle='#DDBE8E'; g.fillRect(0,0,w,h);
+  let s = 7; const rnd = ()=>((s = (s*16807)%2147483647)/2147483647);
+  for(let k=0;k<1800;k++){ const v = rnd(); g.fillStyle = v<.5 ? 'rgba(160,120,70,.18)' : 'rgba(255,245,225,.28)'; g.fillRect(rnd()*w, rnd()*h, 1+rnd()*2.4, 1+rnd()*2.4); }
+});
+sandTex.wrapS = sandTex.wrapT = THREE.RepeatWrapping; sandTex.repeat.set(160,160);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(40000,40000), new THREE.MeshLambertMaterial({ map:sandTex }));
+ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
+
+/* 학교 건물 (북쪽 = -z, 동쪽 = +x) */
+function wallTex(cols,rows){
+  const t = canvasTex(512,512,(g,w,h)=>{
+    g.fillStyle='#E9DCC4'; g.fillRect(0,0,w,h);
+    g.fillStyle='#D8C6A6'; g.fillRect(0,h-18,w,18);
+    const cw = w/cols, rh = h/rows;
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+      g.fillStyle='#5C7FA8'; g.fillRect(c*cw+cw*.18, r*rh+rh*.22, cw*.64, rh*.5);
+      g.fillStyle='rgba(255,255,255,.35)'; g.fillRect(c*cw+cw*.18, r*rh+rh*.22, cw*.64, rh*.08);
+    }
+  });
+  return t;
+}
+const texLong = wallTex(8,4), texShort = wallTex(3,4);
+const roofMat = new THREE.MeshLambertMaterial({ color:0xC9B79A });
+const bLong = new THREE.MeshLambertMaterial({ map:texLong }), bShort = new THREE.MeshLambertMaterial({ map:texShort });
+const building = new THREE.Mesh(new THREE.BoxGeometry(2400,1500,1000), [bShort,bShort,roofMat,roofMat,bLong,bLong]);
+building.position.set(0,750,0); building.castShadow = true; building.receiveShadow = true; scene.add(building);
+/* 현관 */
+const porch = new THREE.Mesh(new THREE.BoxGeometry(500,320,260), new THREE.MeshLambertMaterial({ color:0xB9A27F }));
+porch.position.set(0,160,630); porch.castShadow = true; scene.add(porch);
+
+/* 나무 몇 그루 */
+function tree(x,z,s){
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(18*s,24*s,260*s,8), new THREE.MeshLambertMaterial({ color:0x7A5A3A }));
+  trunk.position.y = 130*s; trunk.castShadow = true; g.add(trunk);
+  const leaf = new THREE.Mesh(new THREE.SphereGeometry(170*s,12,10), new THREE.MeshLambertMaterial({ color:0x6E9E58 }));
+  leaf.position.y = 360*s; leaf.castShadow = true; g.add(leaf);
+  g.position.set(x,0,z); scene.add(g);
+}
+tree(-2600,300,1.1); tree(-2300,-900,1); tree(3900,-3200,1.2); tree(-600,3600,1.1);
+
+/* 비탈 (흙 둔덕) */
+const moundGroup = new THREE.Group();
+moundGroup.position.set(2700,60,-2300); moundGroup.rotation.set(-0.27,0.5,0);
+const mound = new THREE.Mesh(new THREE.BoxGeometry(560,120,560), new THREE.MeshLambertMaterial({ color:0xC79B63 }));
+mound.castShadow = true; mound.receiveShadow = true; moundGroup.add(mound); scene.add(moundGroup);
+
+/* 세 장소 */
+const anchors = {
+  shade: (()=>{ const o = new THREE.Object3D(); o.position.set(600,0,-700); scene.add(o); return o; })(),
+  slope: (()=>{ const o = new THREE.Object3D(); o.position.set(0,60,0); moundGroup.add(o); return o; })(),
+  sun:   (()=>{ const o = new THREE.Object3D(); o.position.set(2100,0,1900); scene.add(o); return o; })()
+};
+const INFO = {
+  shade:{ name:'그늘진 곳', msg:'<strong>그늘진 곳</strong>이에요. 그늘에서는 막대기 그림자가 생기지 않아 태양 고도를 잴 수 없어요. 아래 버튼을 눌러 햇빛이 잘 드는 곳을 다시 골라요.' },
+  slope:{ name:'비탈진 곳', msg:'<strong>비탈진 곳</strong>이에요. 측정기가 기울어지면 그림자 길이와 각이 달라져 정확하게 잴 수 없어요. 아래 버튼을 눌러 평평한 곳을 다시 골라요.' },
+  sun:  { name:'햇빛이 잘 드는 평평한 곳', msg:'<strong>좋아요!</strong> 햇빛이 잘 들고 평평한 곳이에요. 이곳에 측정기를 두고 하루 동안 여러 번 측정해요.' }
+};
+/* 글자 A·B·C 는 불러올 때마다 섞어요 */
+const letters = ['A','B','C'];
+const keys = ['shade','slope','sun'].sort(()=>Math.random()-.5);
+const letterOf = {}; keys.forEach((k,i)=> letterOf[k] = letters[i]);
+const keyOf = {}; keys.forEach((k,i)=> keyOf[letters[i]] = k);
+const tried = {};
+
+/* 방위 글자 */
+function flatText(txt,size){
+  const t = canvasTex(256,256,(g,w,h)=>{ g.fillStyle='rgba(110,78,40,.85)'; g.font='bold 170px "Gowun Dodum","Malgun Gothic",sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(txt,w/2,h/2+8); });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(size,size), new THREE.MeshBasicMaterial({ map:t, transparent:true, depthWrite:false }));
+  m.rotation.x = -Math.PI/2; return m;
+}
+[['북',0,-1],['남',0,1],['동',1,0],['서',-1,0]].forEach(([t,x,z])=>{ const m = flatText(t,42); m.position.set(x*105,0.3,z*105+10); anchors.sun.add(m); });
+
+/* ---------- 태양 고도 측정기 (단위 cm) ---------- */
+const device = new THREE.Group(); device.visible = false;
+const devBody = new THREE.Group(); device.add(devBody);
+const board = new THREE.Mesh(new THREE.BoxGeometry(50,YB,12), new THREE.MeshLambertMaterial({ color:0x3E7CC8 }));
+board.position.set(19,YB/2,1); board.receiveShadow = true; devBody.add(board);
+const rulerBox = new THREE.Mesh(new THREE.BoxGeometry(42,YR-YB,3), new THREE.MeshLambertMaterial({ color:0xE9EDF2 }));
+rulerBox.position.set(20,(YR+YB)/2,1); devBody.add(rulerBox);
+const rulerTex = canvasTex(4200,300,(g,w,h)=>{
+  g.fillStyle='#F7F9FC'; g.fillRect(0,0,w,h);
+  g.strokeStyle='#1C2A43'; g.fillStyle='#1C2A43';
+  for(let mm=0; mm<=RULER*10; mm++){
+    const x = 100 + mm*10, L = mm%10===0 ? 118 : (mm%5===0 ? 72 : 42);
+    g.lineWidth = mm%10===0 ? 4 : 2.2;
+    g.beginPath(); g.moveTo(x,0); g.lineTo(x,L); g.stroke();
+  }
+  g.font='bold 64px "IBM Plex Sans KR","Malgun Gothic",sans-serif'; g.textAlign='center'; g.textBaseline='top';
+  for(let cm=0; cm<=RULER; cm++) g.fillText(String(cm), 100+cm*100, 136);
+  g.font='600 40px "IBM Plex Sans KR","Malgun Gothic",sans-serif'; g.textAlign='left'; g.fillText('cm', 100+RULER*100+26, 150);
+});
+const rulerTop = new THREE.Mesh(new THREE.PlaneGeometry(42,3).rotateX(-Math.PI/2), new THREE.MeshBasicMaterial({ map:rulerTex }));
+rulerTop.position.set(20,YR+0.005,1); devBody.add(rulerTop);   /* 자: x -1~41, z -0.5~2.5 (0 눈금이 x=0) */
+const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.32,H,16), new THREE.MeshLambertMaterial({ color:0xF2C230 }));
+stick.position.set(0,YR+H/2,0); devBody.add(stick);
+const tip = new THREE.Mesh(new THREE.ConeGeometry(0.33,0.8,16), new THREE.MeshLambertMaterial({ color:0xD9811A }));
+tip.position.set(0,YR+H+0.1,0); devBody.add(tip);
+const knot = new THREE.Mesh(new THREE.SphereGeometry(0.34,12,10), new THREE.MeshLambertMaterial({ color:0xD3313B }));
+knot.position.set(0,YR+H,0); devBody.add(knot);
+const holder = new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.1,0.6,16), new THREE.MeshLambertMaterial({ color:0x2B5E9E }));
+holder.position.set(0,YR+0.3,0); devBody.add(holder);
+
+/* 막대기 그림자 (계산해서 그려요) */
+const shadowMat = new THREE.MeshBasicMaterial({ color:0x1b1206, transparent:true, opacity:.55, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2 });
+const stickShadow = new THREE.Mesh(new THREE.PlaneGeometry(1,1).rotateX(-Math.PI/2).translate(0.5,0,0), shadowMat);
+devBody.add(stickShadow);
+
+/* 실 */
+const thread = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,1,8), new THREE.MeshBasicMaterial({ color:0xD3313B }));
+devBody.add(thread);
+const bead = new THREE.Mesh(new THREE.SphereGeometry(0.28,12,10), new THREE.MeshLambertMaterial({ color:0xD3313B }));
+devBody.add(bead);
+
+/* 각도기 (실 끝에 세워요, 0°는 막대기 쪽) */
+const PROT_PX = 1024, PROT_C = 984, PROT_R = 930, PROT_CM = 7.2;
+const protTex = canvasTex(PROT_PX,PROT_PX,(g)=>{
+  const cx = PROT_C, cy = PROT_C, R = PROT_R;
+  g.beginPath(); g.moveTo(cx,cy); g.arc(cx,cy,R,Math.PI,1.5*Math.PI); g.closePath();
+  g.fillStyle='rgba(236,244,255,.82)'; g.fill(); g.lineWidth=5; g.strokeStyle='#2F5FA8'; g.stroke();
+  g.beginPath(); g.arc(cx,cy,R*.42,Math.PI,1.5*Math.PI); g.lineWidth=3; g.stroke();
+  for(let d=0; d<=90; d++){
+    const a = Math.PI + d*D2R, L = d%10===0 ? 110 : (d%5===0 ? 70 : 38);
+    g.lineWidth = d%10===0 ? 5 : (d%5===0 ? 3.5 : 2.2); g.strokeStyle='#1C2A43';
+    g.beginPath(); g.moveTo(cx+Math.cos(a)*R, cy+Math.sin(a)*R); g.lineTo(cx+Math.cos(a)*(R-L), cy+Math.sin(a)*(R-L)); g.stroke();
+  }
+  g.fillStyle='#1C2A43'; g.font='bold 58px "IBM Plex Sans KR","Malgun Gothic",sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+  for(let d=0; d<=90; d+=10){ const a = Math.PI + d*D2R, r = R-170; g.fillText(String(d), cx+Math.cos(a)*r, cy+Math.sin(a)*r); }
+  g.beginPath(); g.arc(cx,cy,14,0,Math.PI*2); g.fillStyle='#D3313B'; g.fill();
+});
+const protGroup = new THREE.Group();
+const prot = new THREE.Mesh(new THREE.PlaneGeometry(PROT_CM,PROT_CM), new THREE.MeshBasicMaterial({ map:protTex, transparent:true, side:THREE.DoubleSide, depthWrite:false }));
+const off = (PROT_PX/2 - PROT_C)/PROT_PX*PROT_CM;   // 음수: 중심이 오른쪽 아래
+prot.position.set(off, -off, 0); protGroup.add(prot);
+devBody.add(protGroup);
+
+/* ---------- 태양 · 시각 ---------- */
+let sun = { alt:45, az:180 };
+function applySun(){
+  sun = sunPos(TIMES[st.ti]);
+  const a = sun.alt*D2R, z = sun.az*D2R;
+  sdir.set(Math.sin(z)*Math.cos(a), Math.sin(a), -Math.cos(z)*Math.cos(a));
+  const c = V(900,0,0);
+  sunLight.target.position.copy(c);
+  sunLight.position.copy(sdir).multiplyScalar(8000).add(c);
+  sunLight.intensity = sun.alt > 0 ? 0.9 : 0;
+}
+function trueL(){ return H/Math.tan(sun.alt*D2R); }
+function targetYaw(){ const hx = -sdir.x, hz = -sdir.z; return ((Math.atan2(-hz,hx)*R2D)%360+360)%360; }
+function angDiff(a,b){ let d = Math.abs(a-b)%360; return d>180 ? 360-d : d; }
+function readAngle(){ return Math.atan2(H, Math.max(st.d,0.01))*R2D; }
+
+/* ---------- 카메라 ---------- */
+let tween = null;
+function flyTo(pos,tgt,ms){ ms = reduceMotion ? 0 : (ms==null ? 900 : ms); tween = { p0:camera.position.clone(), t0:controls.target.clone(), p1:pos, t1:tgt, start:performance.now(), ms }; }
+function overPos(){ const k = camera.aspect < 1 ? 1.9 : (camera.aspect < 1.4 ? 1.35 : 1); return V(1300+6100*k, 3600*k, -300-5300*k); }
+function viewOverview(){ st.view='over'; controls.minDistance=200; flyTo(overPos(), V(1300,0,-300)); }
+function viewSpot(key){
+  st.view='spot'; controls.minDistance=8;
+  const p = anchors[key].getWorldPosition(V(0,0,0));
+  flyTo(p.clone().add(V(-6,62,78)), p.clone().add(V(4,4,-6)));
+}
+function viewSide(high){
+  st.view = high ? 'side3' : 'side4'; controls.minDistance=8;
+  devBody.rotation.y = st.yaw*D2R;
+  devBody.updateWorldMatrix(true,true);
+  const Lc = Math.max(trueL(), 6), D = Math.max(26, (Lc+12)*0.95);
+  const tgt = devBody.localToWorld(V(Lc*0.5, high ? 3 : 5, 0));
+  const pos = devBody.localToWorld(high ? V(Lc*0.5, D*0.55, D*0.85) : V(Lc*0.5, D*0.42, D*0.92));
+  flyTo(pos,tgt);
+}
+function resetView(){
+  if(st.step===1){ st.pick && keyOf[st.pick]!=='sun' ? viewSpot(keyOf[st.pick]) : (st.pick ? viewSpot('sun') : viewOverview()); }
+  else if(st.step===2) viewSpot('sun');
+  else viewSide(st.step===3);
+}
+function mountAt(key){ anchors[key].add(device); device.visible = true; device.position.set(0,0,0); }
+
+/* ---------- 화면 크기 ---------- */
+const card = $('#card');
+function resize(){
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w,h,false); camera.aspect = w/h;
+  /* 아래 활동 카드에 가리지 않도록 화면 중심을 위로 올려요 */
+  const lift = Math.round(Math.min(card.offsetHeight||0, h*0.55)*0.45);
+  camera.setViewOffset(w, h, 0, lift, w, h);
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+if(window.ResizeObserver) new ResizeObserver(()=>{ stage.style.setProperty('--cardH', card.offsetHeight+'px'); resize(); }).observe(card);
+
+/* ---------- 장소 표시 핀 ---------- */
+const pinsEl = $('#pins'), pinEls = {};
+letters.forEach(L=>{
+  const b = document.createElement('button'); b.className='pin'; b.innerHTML='<span>'+L+'</span>'; b.setAttribute('aria-label','장소 '+L);
+  b.addEventListener('click', ()=> choose(L)); pinsEl.appendChild(b); pinEls[L] = b;
+});
+function updatePins(){
+  const show = st.step===1 && st.view==='over';
+  const w = stage.clientWidth, h = stage.clientHeight;
+  letters.forEach(L=>{
+    const el = pinEls[L]; if(!show){ el.style.display='none'; return; }
+    const p = anchors[keyOf[L]].getWorldPosition(V(0,0,0)).add(V(0,170,0)).project(camera);
+    if(p.z>1){ el.style.display='none'; return; }
+    el.style.display='block'; el.style.left=((p.x+1)/2*w)+'px'; el.style.top=((1-p.y)/2*h)+'px';
+    el.classList.toggle('wrong', !!tried[L] && keyOf[L]!=='sun');
+  });
+}
+
+/* ---------- 매 프레임 ---------- */
+const qTmp = new THREE.Quaternion(), vTmp = V(0,0,0);
+function updateDevice(){
+  devBody.rotation.y = (st.placed ? st.yaw : 20)*D2R;
+  /* 실 */
+  const d = st.d, T = V(0,YR+H,0), E = V(d,YR+0.05,0);
+  const v = E.clone().sub(T), len = v.length();
+  thread.position.copy(T).addScaledVector(v,0.5);
+  thread.quaternion.setFromUnitVectors(V(0,1,0), v.normalize());
+  thread.scale.set(1,len,1);
+  bead.position.copy(E);
+  protGroup.position.set(d, YR, -0.62);
+  protGroup.visible = st.placed && st.step>=3;
+  /* 그림자 */
+  const inShade = device.parent === anchors.shade;
+  devBody.getWorldQuaternion(qTmp); qTmp.invert();
+  vTmp.copy(sdir).applyQuaternion(qTmp);
+  if(inShade || vTmp.y <= 0.03 || sun.alt<=0){ stickShadow.visible=false; }
+  else{
+    const k = H/vTmp.y, tx = -vTmp.x*k, tz = -vTmp.z*k, l = Math.hypot(tx,tz);
+    stickShadow.visible = true;
+    stickShadow.position.set(0, YR+0.02, 0);
+    stickShadow.rotation.set(0, Math.atan2(-tz,tx), 0);
+    stickShadow.scale.set(l,1,0.62);
+  }
+}
+function loop(now){
+  requestAnimationFrame(loop);
+  if(tween){
+    const k = tween.ms ? Math.min(1,(now-tween.start)/tween.ms) : 1, e = k<.5 ? 2*k*k : 1-Math.pow(-2*k+2,2)/2;
+    camera.position.lerpVectors(tween.p0,tween.p1,e); controls.target.lerpVectors(tween.t0,tween.t1,e);
+    if(k>=1) tween=null;
+  }
+  controls.update();
+  if(device.visible) updateDevice();
+  updatePins();
+  renderer.render(scene,camera);
+}
+
+/* ---------- 카드 ---------- */
+function stepsHTML(){
+  const names = ['놓기','돌리기','맞추기','읽기'];
+  return '<ol class="steps" aria-label="활동 단계">'+names.map((n,i)=>{
+    const k = i+1, cls = (st.step>k || (k===1 && st.placed && st.step>1)) ? 'done' : (st.step===k ? 'now' : '');
+    return '<li class="'+cls+'"'+(st.step===k?' aria-current="step"':'')+'><b>'+k+'</b>'+n+'</li>';
+  }).join('')+'</ol>';
+}
+const SAFETY = '<p class="note">실제로 측정할 때는 태양을 직접 보지 말고, 모자를 쓰고 그늘에서 쉬어 가며 측정해요.</p>';
+function teacherTip(txt){ return S.teacher ? ' <span style="opacity:.8">(교사용: '+txt+')</span>' : ''; }
+
+function renderCard(){
+  let L = stepsHTML(), R = '';
+  const t = tLabel(TIMES[st.ti]);
+  if(st.step===1){
+    L += '<h2>어디에 놓을까요?</h2><p class="lead">태양 고도 측정기를 놓을 곳을 골라요.</p><p class="how">화면 속 A, B, C를 눌러도 돼요. 화면을 끌어서 돌려 보고, 휠이나 두 손가락으로 확대해요.</p>'+SAFETY;
+    R += '<div class="places">'+letters.map(Lt=>{
+      const k = keyOf[Lt], cls = tried[Lt] ? (k==='sun' ? 'right' : 'wrong') : '';
+      return '<button data-p="'+Lt+'" class="'+cls+'">'+Lt+'</button>';
+    }).join('')+'</div>';
+    if(st.pick){
+      const k = keyOf[st.pick];
+      R += '<p class="fb show '+(k==='sun'?'good':'bad')+'">'+INFO[k].msg+'</p>';
+      R += k==='sun' ? '<div class="actions"><button class="btn" id="next">다음 단계</button></div>'
+                     : '<button class="back" id="back"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>처음 시점으로 돌아가기</button>';
+    } else R += '<div class="actions"><button class="btn" disabled>다음 단계</button></div>';
+  }
+  else if(st.step===2){
+    L += '<h2>그림자를 자에 맞춰요</h2><p class="lead">막대기 그림자가 자의 눈금을 따라 나란히 놓이도록 측정기를 돌려요.</p><p class="how">측정 시각 <b>'+t+'</b> · 그림자는 태양의 반대쪽에 생겨요. 시각이 바뀌면 태양이 움직여서 그림자 방향도 바뀌어요.</p>'+SAFETY;
+    R += '<div class="ctrl"><label for="yaw">측정기 돌리기</label><div class="row"><button class="nudge" data-n="-1" aria-label="왼쪽으로 조금">‹</button><input id="yaw" type="range" min="0" max="359" step="1" value="'+Math.round(st.yaw)+'"><button class="nudge" data-n="1" aria-label="오른쪽으로 조금">›</button></div></div>';
+    R += '<div class="actions">'+(st.ok2 ? '<button class="btn" id="next">다음 단계</button>' : '<button class="btn" id="check">확인</button>')+'</div><p class="fb" id="fb"></p>';
+  }
+  else if(st.step===3){
+    L += '<h2>실을 그림자 끝에 맞춰요</h2><p class="lead">막대기 끝에 묶은 실을 당겨서, 실 끝을 그림자 끝에 딱 맞춰요.</p><p class="how">측정 시각 <b>'+t+'</b> · 실 끝에 세운 각도기로 다음 단계에서 각을 읽어요.</p>'+SAFETY;
+    R += '<div class="ctrl"><label for="dd">실 당기기</label><div class="row"><button class="nudge" data-n="-0.1" aria-label="조금 줄이기">‹</button><input id="dd" type="range" min="0.5" max="'+RULER+'" step="0.1" value="'+st.d.toFixed(1)+'"><button class="nudge" data-n="0.1" aria-label="조금 늘이기">›</button></div></div>';
+    R += '<div class="actions">'+(st.ok3 ? '<button class="btn" id="next">다음 단계</button>' : '<button class="btn" id="check">확인</button>')+'</div><p class="fb" id="fb"></p>';
+  }
+  else if(st.step===4){
+    const temp = tempAt(st.ti);
+    L += '<h2>눈금을 읽어요</h2><p class="lead">각도기로 <b>실과 그림자가 이루는 각</b>을, 자로 <b>그림자 길이</b>를 읽어 적어요.</p><p class="how">측정 시각 <b>'+t+'</b> · 각도기는 1°, 자는 1 mm 간격 눈금이에요. 화면을 확대해서 가장 가까운 눈금을 읽어요.</p>'+SAFETY;
+    const rec = records[st.ti];
+    R += '<div class="reads"><label class="field" id="fA"><span>태양 고도</span><div><input id="inA" inputmode="decimal" autocomplete="off" value="'+(rec?rec.alt:'')+'"><em>°</em></div></label>'
+       + '<label class="field" id="fL"><span>그림자 길이</span><div><input id="inL" inputmode="decimal" autocomplete="off" value="'+(rec?rec.len:'')+'"><em>cm</em></div></label></div>';
+    R += '<div class="temp">'+thermoSVG(temp)+'<span>그늘진 곳, 1.5 m 높이의 온도계<br><b style="font-size:1.1rem">'+temp.toFixed(1)+' °C</b> 는 함께 기록돼요.</span></div>';
+    R += '<div class="actions">'+(st.ok4 ? nextTimeBtn() : '<button class="btn" id="check">기록하기</button>')+'</div><p class="fb" id="fb"></p>';
+  }
+  card.innerHTML = '<div class="c-text">'+L+'</div><div class="c-ctrl">'+R+'</div>';
+  bindCard();
+}
+function thermoSVG(t){
+  return '<svg width="84" height="40" viewBox="0 0 84 40" aria-hidden="true"><rect x="1" y="1" width="82" height="38" rx="8" fill="#1C2A43"/><rect x="6" y="6" width="72" height="28" rx="5" fill="#CFE6C8"/><text x="42" y="26" text-anchor="middle" font-family="IBM Plex Sans KR,Malgun Gothic,sans-serif" font-weight="700" font-size="17" fill="#1C2A43">'+t.toFixed(1)+'°</text></svg>';
+}
+function nextIndex(){ for(let i=st.ti+1;i<TIMES.length;i++) if(available(i) && !records[i]) return i; for(let i=0;i<TIMES.length;i++) if(available(i) && !records[i]) return i; return -1; }
+function nextTimeBtn(){
+  const n = nextIndex();
+  return n>=0 ? '<button class="btn" id="nextTime">다음 시각 ('+tLabel(TIMES[n])+') 측정하기</button>' : '<button class="btn" id="showGraph">모든 측정 끝! 그래프 보기</button>';
+}
+function fb(cls,html){ const el = $('#fb'); if(!el) return; el.className = 'fb show '+cls; el.innerHTML = html; }
+
+function bindCard(){
+  card.querySelectorAll('[data-p]').forEach(b=> b.onclick = ()=> choose(b.dataset.p));
+  const back = $('#back'); if(back) back.onclick = ()=>{ st.pick=null; device.visible=false; viewOverview(); renderCard(); };
+  const next = $('#next'); if(next) next.onclick = advance;
+  const yaw = $('#yaw');
+  if(yaw){ yaw.oninput = ()=>{ st.yaw = +yaw.value; if(st.ok2){ st.ok2=false; renderCard(); } };
+    card.querySelectorAll('[data-n]').forEach(b=> b.onclick = ()=>{ st.yaw = (st.yaw + (+b.dataset.n) + 360)%360; yaw.value = Math.round(st.yaw); }); }
+  const dd = $('#dd');
+  if(dd){ dd.oninput = ()=>{ st.d = +dd.value; if(st.ok3){ st.ok3=false; renderCard(); } };
+    card.querySelectorAll('[data-n]').forEach(b=> b.onclick = ()=>{ st.d = Math.min(RULER, Math.max(0.5, Math.round((st.d + (+b.dataset.n))*10)/10)); dd.value = st.d; }); }
+  const check = $('#check'); if(check) check.onclick = doCheck;
+  const nt = $('#nextTime'); if(nt) nt.onclick = ()=>{ const n = nextIndex(); if(n>=0) goTime(n); };
+  const sg = $('#showGraph'); if(sg) sg.onclick = ()=>{ openSheet('G'); };
+  ['inA','inL'].forEach(id=>{ const el = $('#'+id); if(el) el.addEventListener('keydown', e=>{ if(e.key==='Enter') doCheck(); }); });
+}
+
+function choose(Lt){
+  if(st.step!==1) return;
+  st.pick = Lt; tried[Lt] = true;
+  const k = keyOf[Lt];
+  mountAt(k); viewSpot(k); renderCard();
+}
+function advance(){
+  if(st.step===1){ st.placed = true; mountAt('sun'); st.step = 2; st.ok2=false; renderTimes(); viewSpot('sun'); }
+  else if(st.step===2){ st.step = 3; st.ok3=false; viewSide(true); }
+  else if(st.step===3){ st.step = 4; st.ok4=false; viewSide(false); }
+  renderCard();
+}
+function doCheck(){
+  if(st.step===2){
+    const diff = angDiff(st.yaw, targetYaw());
+    if(diff <= 3){ st.ok2 = true; renderCard(); fb('good','<strong>잘했어요!</strong> 그림자가 0 눈금에서 시작해 자를 따라 뻗어 있어요.'); }
+    else fb('bad','아직 그림자가 자에서 벗어나 있어요. 그림자가 <b>0 눈금에서 시작해 자의 눈금을 따라</b> 뻗도록 조금 더 돌려 보세요.'+teacherTip('약 '+Math.round(diff)+'° 더 돌려야 해요'));
+  }
+  else if(st.step===3){
+    const L = trueL(), e = st.d - L;
+    if(Math.abs(e) <= 0.4){ st.ok3 = true; renderCard(); fb('good','<strong>좋아요!</strong> 실 끝이 그림자 끝과 딱 만났어요. 이제 각도기와 자의 눈금을 읽어요.'); }
+    else if(e < 0) fb('bad','실 끝이 아직 그림자 끝보다 <b>막대기 쪽</b>에 있어요. 실을 조금 더 당겨요.'+teacherTip('그림자 길이 '+L.toFixed(1)+' cm'));
+    else fb('bad','실 끝이 그림자 끝을 <b>지나쳤어요</b>. 조금 줄여요.'+teacherTip('그림자 길이 '+L.toFixed(1)+' cm'));
+  }
+  else if(st.step===4){
+    const a = parseFloat(($('#inA').value||'').replace(',','.')), l = parseFloat(($('#inL').value||'').replace(',','.'));
+    const A = readAngle(), L = trueL();
+    const okA = isFinite(a) && Math.abs(a-A) <= 2, okL = isFinite(l) && Math.abs(l-L) <= 0.5;
+    $('#fA').className = 'field '+(okA?'ok':'bad'); $('#fL').className = 'field '+(okL?'ok':'bad');
+    if(okA && okL){
+      records[st.ti] = { alt:Math.round(a*10)/10, len:Math.round(l*10)/10, temp:tempAt(st.ti) }; saveRecords();
+      st.ok4 = true; st.tries = 0; renderCard(); renderTimes(); renderSheet();
+      fb('good','<strong>기록했어요!</strong> '+tLabel(TIMES[st.ti])+' — 태양 고도 '+records[st.ti].alt+'°, 그림자 길이 '+records[st.ti].len+' cm, 기온 '+records[st.ti].temp+' °C');
+    } else {
+      st.tries++;
+      let m = [];
+      if(!okA) m.push(isFinite(a) ? '각도기 눈금을 다시 읽어 보세요. <b>0°는 막대기 쪽</b>이고, 실이 가리키는 눈금을 읽어요.' : '태양 고도를 숫자로 적어요.');
+      if(!okL) m.push(isFinite(l) ? '자 눈금을 다시 읽어 보세요. 그림자 끝(실 끝)이 가리키는 눈금이에요. 작은 눈금 하나는 1 mm(0.1 cm)예요.' : '그림자 길이를 숫자로 적어요.');
+      const help = (st.tries>=3 || S.teacher) ? ' <span style="opacity:.85">(도움말: 태양 고도 약 '+Math.round(A)+'°, 그림자 길이 약 '+L.toFixed(1)+' cm)</span>' : '';
+      fb('bad', m.join('<br>')+help);
+    }
+  }
+}
+function goTime(i){
+  st.ti = i; applySun(); st.tries = 0;
+  if(st.placed){ st.step = 2; st.ok2=false; st.ok3=false; st.ok4=false; viewSpot('sun'); }
+  renderTimes(); renderCard(); renderSheet();
+}
+
+/* ---------- 시각 버튼 ---------- */
+function renderTimes(){
+  const el = $('#times'); el.innerHTML = '';
+  TIMES.forEach((h,i)=>{
+    const b = document.createElement('button');
+    b.textContent = tLabel(h);
+    b.setAttribute('aria-pressed', i===st.ti ? 'true' : 'false');
+    const av = available(i);
+    b.disabled = !st.placed || !av;
+    if(!av) b.title = '태양 고도가 낮아 그림자가 자보다 길어요';
+    else if(!st.placed) b.title = '먼저 측정기를 놓을 곳을 골라요';
+    if(records[i]) b.classList.add('rec');
+    b.onclick = ()=> goTime(i);
+    el.appendChild(b);
+  });
+}
+
+/* ---------- 기록표 · 그래프 ---------- */
+const sheet = $('#sheet');
+function openSheet(tab){ sheet.classList.add('open'); $('#recBtn').setAttribute('aria-expanded','true'); setTab(tab||'T'); renderSheet(); }
+function closeSheet(){ sheet.classList.remove('open'); $('#recBtn').setAttribute('aria-expanded','false'); }
+function setTab(t){ $('#tabT').setAttribute('aria-selected', t==='T'); $('#tabG').setAttribute('aria-selected', t==='G'); $('#paneT').hidden = t!=='T'; $('#paneG').hidden = t!=='G'; }
+function tableRows(forPrint){
+  return TIMES.map((h,i)=>{
+    const r = records[i], cur = (!forPrint && i===st.ti) ? ' class="cur"' : '';
+    if(!available(i)) return '<tr'+cur+'><td>'+tLabel(h)+'</td><td class="empty" colspan="3">해가 낮아 측정하지 않아요</td></tr>';
+    return '<tr'+cur+'><td>'+tLabel(h)+'</td>'+(r ? '<td>'+r.alt+'</td><td>'+r.len+'</td><td>'+r.temp.toFixed(1)+'</td>' : '<td class="empty">–</td><td class="empty">–</td><td class="empty">–</td>')+'</tr>';
+  }).join('');
+}
+function graphSVG(colors){
+  const W=420, Hh=240, l=30, r=26, t=16, b=34, pw=W-l-r, ph=Hh-t-b;
+  const idx = TIMES.map((_,i)=>i).filter(i=>records[i]);
+  const x = i => l + (i/(TIMES.length-1))*pw;
+  let s = '';
+  for(let k=0;k<=4;k++){ const y = t+ph*k/4; s += '<line x1="'+l+'" x2="'+(W-r)+'" y1="'+y+'" y2="'+y+'" stroke="#D6DFEB" stroke-width="1"/>'; }
+  TIMES.forEach((h,i)=>{ s += '<text x="'+x(i)+'" y="'+(Hh-12)+'" text-anchor="middle" font-size="11" fill="#5A6A84">'+tLabel(h)+'</text>'; });
+  s += '<line x1="'+l+'" x2="'+l+'" y1="'+t+'" y2="'+(t+ph)+'" stroke="#9AA8BD"/><line x1="'+l+'" x2="'+(W-r)+'" y1="'+(t+ph)+'" y2="'+(t+ph)+'" stroke="#9AA8BD"/>';
+  if(!idx.length){ s += '<text x="'+(W/2)+'" y="'+(t+ph/2)+'" text-anchor="middle" font-size="13" fill="#5A6A84">측정한 값을 기록하면 그래프가 그려져요</text>'; return s; }
+  const temps = idx.map(i=>records[i].temp), tl = Math.floor(Math.min.apply(null,temps))-2, th = Math.ceil(Math.max.apply(null,temps))+2;
+  const alts = idx.map(i=>records[i].alt), lens = idx.map(i=>records[i].len);
+  const series = [
+    { k:'alt', c:colors[0], lo:0, hi:Math.max(60, Math.ceil(Math.max.apply(null,alts)/10)*10+10), dy:-8 },
+    { k:'len', c:colors[1], lo:0, hi:Math.max(30, Math.ceil(Math.max.apply(null,lens)/5)*5+5), dy:16 },
+    { k:'temp', c:colors[2], lo:tl, hi:th, dy:17 }
+  ];
+  series.forEach(se=>{
+    const y = v => t + ph - (v-se.lo)/(se.hi-se.lo)*ph;
+    const pts = idx.map(i=> x(i)+','+y(records[i][se.k]).toFixed(1));
+    if(pts.length>1) s += '<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+se.c+'" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>';
+    idx.forEach(i=>{ const v = records[i][se.k], yy = y(v);
+      s += '<circle cx="'+x(i)+'" cy="'+yy.toFixed(1)+'" r="3.6" fill="#fff" stroke="'+se.c+'" stroke-width="2"/>';
+      s += '<text x="'+x(i)+'" y="'+(yy+se.dy).toFixed(1)+'" text-anchor="middle" font-size="10" font-weight="600" fill="'+se.c+'">'+v+'</text>'; });
+  });
+  return s;
+}
+function renderSheet(){
+  $('#tbody').innerHTML = tableRows(false);
+  $('#graph').innerHTML = graphSVG(['#D3313B','#2F5FA8','#D9811A']);
+}
+
+/* ---------- 인쇄 · PDF ---------- */
+function fmtDate(ds){ const p = ds.split('-').map(Number); return p[0]+'년 '+p[1]+'월 '+p[2]+'일'; }
+function doPrint(){
+  const reg = S.region==='직접 입력' ? ('위도 '+S.lat+'°, 경도 '+S.lon+'°') : S.region;
+  $('#printArea').innerHTML =
+    '<h1>하루 동안 태양 고도, 그림자 길이, 기온 측정 기록</h1>'+
+    '<p class="info">'+esc(S.school)+' · '+esc(S.klass)+' · 측정 날짜 '+fmtDate(S.date)+' · '+esc(reg)+' · 막대기 길이 10 cm</p>'+
+    '<div class="name">학번 <span>&nbsp;</span> 이름 <span>&nbsp;</span></div>'+
+    '<table><thead><tr><th>측정 시각</th><th>태양 고도(°)</th><th>그림자 길이(cm)</th><th>기온(°C)</th></tr></thead><tbody>'+tableRows(true)+'</tbody></table>'+
+    '<h3>꺾은선그래프 <span style="font-weight:400;font-size:10pt">— <span style="color:#D3313B">태양 고도</span> · <span style="color:#2F5FA8">그림자 길이</span> · <span style="color:#D9811A">기온</span></span></h3>'+
+    '<svg viewBox="0 0 420 240">'+graphSVG(['#D3313B','#2F5FA8','#D9811A'])+'</svg>'+
+    '<h3>알게 된 점</h3><div class="lines"><div></div><div></div><div></div><div></div></div>';
+  window.print();
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ---------- 설정 ---------- */
+const modal = $('#settings');
+function subtitle(){
+  const reg = S.region==='직접 입력' ? ('위도 '+S.lat+'°') : S.region;
+  $('#subtitle').textContent = S.school+' · '+S.klass+' · '+reg+' · '+fmtDate(S.date);
+}
+function openSettings(){
+  $('#fSchool').value = S.school; $('#fKlass').value = S.klass;
+  $('#fRegion').innerHTML = REGIONS.map(r=>'<option'+(r[0]===S.region?' selected':'')+'>'+r[0]+'</option>').join('');
+  $('#fDate').value = S.date; $('#fLat').value = S.lat; $('#fLon').value = S.lon;
+  $('#fTmin').value = S.tmin; $('#fTmax').value = S.tmax; $('#fTeacher').checked = !!S.teacher;
+  modal.classList.add('open'); $('#fSchool').focus();
+}
+function closeSettings(){ modal.classList.remove('open'); $('#setBtn').focus(); }
+$('#fRegion').onchange = ()=>{ const r = REGIONS.find(x=>x[0]===$('#fRegion').value); if(r && r[1]!=null){ $('#fLat').value = r[1]; $('#fLon').value = r[2]; } };
+['fLat','fLon'].forEach(id=> $('#'+id).addEventListener('input', ()=>{ $('#fRegion').value = '직접 입력'; }));
+$('#fDate').onchange = ()=>{ if(!$('#fDate').value) return; const m = monthOf($('#fDate').value); $('#fTmin').value = MONTH_T[m][0]; $('#fTmax').value = MONTH_T[m][1]; };
+$('#saveSet').onclick = ()=>{
+  const lat = parseFloat($('#fLat').value), lon = parseFloat($('#fLon').value);
+  let tmin = parseFloat($('#fTmin').value), tmax = parseFloat($('#fTmax').value);
+  if(!isFinite(lat) || lat<20 || lat>50 || !isFinite(lon) || lon<110 || lon>145){ alert('위도와 경도를 확인해 주세요. (예: 위도 35.87, 경도 128.60)'); return; }
+  if(!isFinite(tmin) || !isFinite(tmax)){ alert('기온을 숫자로 적어 주세요.'); return; }
+  if(tmin > tmax){ const x = tmin; tmin = tmax; tmax = x; }
+  S = { school:$('#fSchool').value.trim()||'우리 학교', klass:$('#fKlass').value.trim()||'6학년 과학', region:$('#fRegion').value,
+        lat:Math.round(lat*100)/100, lon:Math.round(lon*100)/100, date:$('#fDate').value||todayStr(), tmin, tmax, teacher:$('#fTeacher').checked };
+  store.set('sunalt.settings', S);
+  loadRecords(); subtitle();
+  let i = st.ti; if(!available(i)){ i = TIMES.findIndex((_,k)=>available(k)); if(i<0) i = 0; }
+  closeSettings();
+  if(TIMES.every((_,k)=>!available(k))) alert('이 날짜와 위치에서는 태양 고도가 낮아 그림자가 자(40 cm)보다 길어요. 다른 날짜를 골라 보세요.');
+  goTime(i);
+};
+$('#cancelSet').onclick = closeSettings;
+$('#restartBtn').onclick = ()=>{
+  st.step=1; st.pick=null; st.placed=false; st.ok2=st.ok3=st.ok4=false; st.d=3;
+  Object.keys(tried).forEach(k=> delete tried[k]);
+  device.visible=false; closeSettings(); renderTimes(); renderCard(); viewOverview();
+};
+modal.addEventListener('click', e=>{ if(e.target===modal) closeSettings(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ if(modal.classList.contains('open')) closeSettings(); else if(sheet.classList.contains('open')) closeSheet(); } });
+
+/* ---------- 버튼 연결 ---------- */
+$('#recBtn').onclick = ()=> sheet.classList.contains('open') ? closeSheet() : openSheet('T');
+$('#closeSheet').onclick = closeSheet;
+$('#tabT').onclick = ()=> setTab('T'); $('#tabG').onclick = ()=> setTab('G');
+$('#viewBtn').onclick = resetView;
+$('#setBtn').onclick = openSettings;
+$('#printBtn1').onclick = doPrint; $('#printBtn2').onclick = doPrint;
+$('#resetBtn').onclick = ()=>{ if(confirm('이 날짜의 기록을 모두 지울까요?')){ records = {}; saveRecords(); renderTimes(); renderSheet(); if(st.step===4){ st.ok4=false; renderCard(); } } };
+
+/* ---------- 시작 ---------- */
+(function init(){
+  let i = TIMES.findIndex((_,k)=>available(k) && !records[k]); if(i<0) i = TIMES.findIndex((_,k)=>available(k)); if(i<0) i = 0;
+  st.ti = i; applySun();
+  st.yaw = (targetYaw() + 55 + Math.random()*70) % 360;
+  subtitle(); resize(); renderTimes(); renderSheet(); renderCard();
+  camera.position.copy(overPos()); controls.target.set(1300,0,-300); controls.minDistance = 200;
+  requestAnimationFrame(loop);
+})();
+})();
+</script>
+</body>
+</html>
